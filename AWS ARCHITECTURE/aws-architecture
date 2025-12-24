@@ -1,0 +1,144 @@
+Choice: AWS cloud
+1) Cloud Environment Structure (why we need Accounts)
+AWS Organizations + Accounts
+What it does: allows us to manage several AWS Accounts in one organization, set policies, logging and billing.
+Also isolation (Prod and Dev are protected from each other), we can manage security as well as central audit of costs and control.
+For example, in the Prod Account only the Production system and real data will be, and it will be managed.
+In the stage-dev account — Dev/Staging will be only test environment and development
+Also in the Shared/Security/Logging Account there will be CloudTrail, Logs, Security services centrally
+ 
+2) Network Design VPC
+VPC (Virtual Private Cloud)
+This is our private network in AWS, where we define subnets, routing, and security.
+This is so that we have control over the network; DB and internal services must not be directly accessible from the internet.
+We will use it like this: a separate VPC for each environment (Prod/NonProd).
+Subnets (Public / Private App / Private Data)
+This will give us network segmentation in the VPC.
+This is a security best practice — in Public only edge components, in Private the application/DB.
+We will do it like this:
+•	Public subnets: ALB, NAT (if needed)
+•	Private App subnets: EKS nodes and Pods
+•	Private Data subnets: RDS/Aurora DB
+Availability Zones (2-3 AZ)
+We need this so that the infrastructure is distributed across several data centers
+Meaning if there is a problem in one AZ, the system does not stop working i.e. >> (High Availability). We will configure it like this >> each subnet at least in 2 AZs.
+Internet Gateway (IGW)
+This service gives Public subnets a connection to the internet.
+We need this because the Load Balancer must receive user traffic. It is used like this >>> IGW connects to public subnets.
+NAT Gateway
+This works like this: outbound internet from Private subnets (update, external APIs).
+In short: Pods/Nodes often need outbound connection, but we don’t want inbound. Meaning EKS private subnets go to the internet through NAT.
+VPC Endpoints (S3/ECR/CloudWatch/Secrets)
+We need this for internal communication, meaning access to AWS services without the internet (inside the VPC).
+This increases security and often reduces NAT costs.
+We use it like this: with Endpoints EKS pulls images from ECR, writes logs to CloudWatch and uses Secrets Manager.
+ 
+3) Edge, DNS, CDN why we need it
+Route 53 (DNS)
+We need this for the domain, for example (api.innovate.com, app.innovate.com) so users can access our application from a web browser
+It is stable. This is DNS + easy integration with AWS resources.
+We configure it like this: the SPA domain points to CloudFront
+The API domain points to ALB
+CloudFront CDN for SPA
+We need this for users because content is cached across different edge locations in the world.
+React SPA loads fast globally, less load on backend, better UX.
+We configure it as follows: React build is uploaded to S3, CloudFront serves users.
+S3 Static hosting for SPA
+S3 is cheap and reliable object storage for static files.
+For SPA we don’t need a server; S3 + CloudFront is very cost-effective.
+It is used like this: build artifacts (HTML/CSS/JS) are stored in a bucket.
+AWS Certificate Manager (ACM)
+ACM is needed for easy management of TLS certificates
+HTTPS is necessary for sensitive data.
+It is configured like this: on CloudFront/ALB we enable TLS with ACM certificates.
+AWS WAF Web Application Firewall
+WAF blocks bad traffic, bots, rate-limit.
+It ensures protection of the API from OWASP-type attacks and abuse.
+We do it as follows: we attach WAF to the ALB in front of the API
+Also we use AWS Shield for protection from DDoS attack.
+ 
+4) Compute Platform — EKS Managed Kubernetes
+Amazon EKS
+What it does: Managed Kubernetes Control Plane (master) on AWS.
+Why: Kubernetes gives a standard deployment model, easy scaling and portability; EKS reduces operational load.
+It is used as follows: Prod/NonProd clusters separately.
+Node Groups Managed Node Groups
+What it does: managed groups of EKS worker nodes.
+This is easy update/scale/rolling changes.
+How we use it:
+•	system nodegroup: core components (ingress, monitoring, dns)
+•	app nodegroup: Flask API pods (and other workloads)
+Autoscaling (HPA + Cluster Autoscaler/Karpenter)
+This does the following: HPA increases/decreases the number of Pods based on load
+Cluster Autoscaler/Karpenter increases/decreases nodes
+Why? At the beginning load is low, as it grows it must automatically adapt.
+We configure it as follows: HPA on CPU/Memory metrics, node scaling with autoscaler/Karpenter.
+Ingress + ALB (AWS Load Balancer Controller)
+What it does? From Kubernetes Ingress objects it automatically creates an ALB.
+This is easy HTTPS termination, path-based routing (/api), integration with WAF/ACM.
+This is how we use it: the API service is exposed on ALB on 443.
+RBAC + IRSA (IAM Roles for Service Accounts)
+This gives a Pod exactly the AWS permissions that are needed.
+This is a security best practice — we don’t want wide access at node-level.
+And we use it for example: we give the API pod only Secrets Manager read permission.
+ 
+5) Containerization, Registry, Deployment (CI/CD)
+Docker (Containerization)
+What it does? We package the application as a container, it runs the same everywhere.
+Why: deploying on Kubernetes is standard; rollout is easy.
+We use it like this: Dockerfile for Flask API, image versioning with tags.
+Amazon ECR (Elastic Container Registry)
+What it does? storing/versioning Docker images.
+Why? Secure, fast and natively integrated with AWS.
+How do we use it? CI pipeline pushes to ECR, EKS pulls from ECR.
+GitHub Actions / GitLab CI (CI part)
+What it does? automatically builds/tests/scans/pushes artifacts.
+Why? Frequent release and quality control is needed.
+How do we use it?
+•	build + unit tests
+•	security scan (dependency/vuln)
+•	push ECR (backend image)
+•	upload SPA build to S3
+ArgoCD / Flux (CD/GitOps)
+What it does: Kubernetes deployments go to Git, and the system “Git = Source of Truth”.
+Why? Less risk, transparent changes, rollback is easy.
+How do we use it: Helm charts or Kustomize overlays for dev/stage/prod.
+Secrets Manager + External Secrets Operator
+What it does? secrets are stored in AWS and automatically synced in Kubernetes.
+In short: secret must not be in Git; we need rotation and audit.
+We use it like this: DB credentials and API keys in Secrets Manager.
+ 
+6) Database — PostgreSQL (Managed)
+Amazon RDS for PostgreSQL (Multi-AZ)
+This does the following — Managed PostgreSQL with automatic failover.
+Why? a small team should not manage DB itself; Multi-AZ increases availability.
+How do we use it? DB only in private data subnets, access only from the API with security group.
+Backups + PITR
+What it does? automatic backups and point-in-time restore.
+Why? data is sensitive; on mistake we must restore quickly.
+How do we use it? retention e.g. 7-30 days + periodic snapshots.
+Disaster Recovery (DR)
+What it does: recovery plan in case of failure.
+Why? Losing Production data is critical.
+How do we use it? snapshots copy to another Region (as it grows).
+At the growth stage it is possible Aurora PostgreSQL read scaling + better performance.
+ 
+7) Observability & Security Monitoring
+CloudWatch (Logs/Metrics/Alarms)
+This does the following --- logs, metrics, alarms.
+Why? SLA/Monitoring is necessary so we can detect a problem quickly.
+We use it as follows: EKS logs, ALB metrics, RDS metrics, alarms latency, errors, CPU
+CloudTrail
+What it does? audit of all API calls in AWS.
+This is a basic requirement of security and compliance. How do we use it? Organization-level trail, log storage centrally.
+GuardDuty / Security Hub
+This does -- threat detection and security posture. Why?
+There is sensitive data; early detection is needed.
+How do we use it: alerts + integration Slack/PagerDuty.
+ 
+8) Cost Optimization why it will be cheap at the beginning
+CloudFront caching reduces backend load
+EKS autoscaling: with low load small resources, with high load resources increase, then if low it decreases again
+NonProd schedule: reduce resources at night/weekend
+VPC endpoints reduce NAT cost where possible
+RDS right-sizing: small instance at the beginning, upgrade as it grows
