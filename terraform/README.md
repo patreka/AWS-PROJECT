@@ -5,16 +5,16 @@ It also installs Karpenter via Helm and (optionally) applies Karpenter manifests
 
 ## What this creates
 
-- **VPC** with public and private subnets across multiple AZs
-- **NAT Gateway** (single NAT for the POC)
-- **EKS cluster** (version configurable)
-- **EKS managed node group** named **bootstrap** (used to bring the cluster online)
-- **EKS addons** (installed by the EKS module):
+- VPC with public and private subnets across multiple AZs
+- NAT Gateway** (single NAT for the POC)
+- EKS cluster** (version configurable)
+- EKS managed node group** named **bootstrap** (used to bring the cluster online)
+- EKS addons** (installed by the EKS module):
   - `vpc-cni` (installed before compute)
   - `coredns`
   - `kube-proxy`
   - `eks-pod-identity-agent` (installed before compute)
-- **Karpenter**:
+- Karpenter**:
   - IRSA service account (`kube-system/karpenter`)
   - Controller IAM role + policy
   - Node IAM role (for instances Karpenter launches)
